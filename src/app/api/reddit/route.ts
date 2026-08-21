@@ -1,6 +1,6 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-const VALID_PATH = /^\/r\/[\w_]+\/(new|hot|search)\.json/;
+const VALID_PATH = /^\/r\/[\w_+]+(?:%2B|\+)?[\w_+]*\/(new|hot|search)\.json/;
 
 export async function GET(req: NextRequest) {
   const path = req.nextUrl.searchParams.get('path');

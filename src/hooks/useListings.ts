@@ -5,14 +5,43 @@ import { parsePrice } from '@/lib/price';
 import { detectSold, parseBulkItems } from '@/lib/sold';
 import type { Listing, RedditPost } from '@/types';
 
-// Concurrency limiter to avoid Reddit 429 Too Many Requests
-const queue: (() => void)[] = [];
-let active = 0;
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 1 day
+
+function getFromCache(subId: string, query: string): Listing[] | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const key = `reddit_cache_${subId}_${query}`;
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const { data, timestamp } = JSON.parse(raw);
+    if (Date.now() - timestamp > CACHE_TTL) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
+function saveToCache(subId: string, query: string, data: Listing[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    const key = `reddit_cache_${subId}_${query}`;
+    localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+  } catch (e) {
+    // Silently ignore if localStorage is full or disabled
+  }
+}
+
+// Simple semaphore to limit concurrent requests
 const MAX_CONCURRENT = 3;
+let activeRequests = 0;
+const queue: (() => void)[] = [];
 
 async function acquire() {
-  if (active < MAX_CONCURRENT) {
-    active++;
+  if (activeRequests < MAX_CONCURRENT) {
+    activeRequests++;
     return;
   }
   return new Promise<void>((resolve) => {
@@ -21,9 +50,9 @@ async function acquire() {
 }
 
 function release() {
-  active--;
+  activeRequests--;
   if (queue.length > 0) {
-    active++;
+    activeRequests++;
     const next = queue.shift();
     next?.();
   }
@@ -47,49 +76,10 @@ const PROXIES = [
   (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
 ];
 
-async function fetchSubreddit(subId: string, query: string): Promise<Listing[]> {
-  await acquire();
-  try {
-    const rpath = query
-      ? `/r/${subId}/search.json?q=${encodeURIComponent(query)}&restrict_sr=1&sort=new&limit=25`
-      : `/r/${subId}/new.json?limit=25`;
-    const directUrl = `https://www.reddit.com${rpath}`;
-
-    // 1. DIRECT FETCH FIRST:
-    // If the user is logged into Reddit, their browser cookies will instantly bypass the local IP ban.
-    try {
-      const res = await fetchT(directUrl, 5000, { credentials: 'include', headers: { Accept: 'application/json' }});
-      if (res.ok) {
-        const json = await res.json();
-        if (json?.data?.children) {
-          const children: { data: RedditPost }[] = json.data.children;
-          return children.map((c) => mapPost(c.data)).filter((p) => p.title.length > 2);
-        }
-      }
-    } catch (e) {}
-
-    // 2. Try proxy methods sequentially with short timeouts so it doesn't hang forever
-    for (let i = 0; i < PROXIES.length; i++) {
-      const pUrl = PROXIES[i](directUrl);
-      try {
-        const res = await fetchT(pUrl, 6000, {
-          headers: { Accept: 'application/json' },
-        });
-        if (res.ok) {
-          const json = await res.json();
-          if (json?.data?.children) {
-            const children: { data: RedditPost }[] = json.data.children;
-            return children.map((c) => mapPost(c.data)).filter((p) => p.title.length > 2);
-          }
-        }
-      } catch (e) {}
-    }
-    
-    // If we reach here, all fetch methods failed (likely due to Reddit 429 rate limits)
-    throw new Error(`All fetch methods failed for r/${subId}`);
-  } finally {
-    release();
-  }
+function parsePriceSafe(text: string): number | null {
+  const m = text.match(/(?:rs\.?|inr|₹)\s*([\d,]+)/i);
+  if (!m) return null;
+  return parseInt(m[1].replace(/,/g, ''), 10);
 }
 
 function mapPost(r: RedditPost): Listing {
@@ -101,7 +91,7 @@ function mapPost(r: RedditPost): Listing {
     title: r.title,
     body: r.selftext,
     author: r.author,
-    price: parsePrice(text),
+    price: parsePriceSafe(text),
     isBulk: bulkItems.length >= 2,
     bulkItems,
     sold: detectSold(r.title, r.selftext, r.link_flair_text),
@@ -113,6 +103,65 @@ function mapPost(r: RedditPost): Listing {
   };
 }
 
+async function fetchSubreddit(subId: string, query: string): Promise<Listing[]> {
+  const cached = getFromCache(subId, query);
+  
+  await acquire();
+  try {
+    const rpath = query
+      ? `/r/${subId}/search.json?q=${encodeURIComponent(query)}&restrict_sr=1&sort=new&limit=25`
+      : `/r/${subId}/new.json?limit=25`;
+    const directUrl = `https://www.reddit.com${rpath}`;
+
+    // 1. DIRECT FETCH FIRST:
+    try {
+      const res = await fetchT(directUrl, 5000, { credentials: 'include', headers: { Accept: 'application/json' }});
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.data?.children) {
+          const children: { data: RedditPost }[] = json.data.children;
+          const listings = children
+            .map((c) => { try { return mapPost(c.data); } catch { return null; } })
+            .filter((p): p is Listing => p !== null && typeof p.title === 'string' && p.title.length > 2);
+          
+          saveToCache(subId, query, listings);
+          return listings;
+        }
+      }
+    } catch (e) {}
+
+    // 2. Try proxy methods sequentially
+    for (let i = 0; i < PROXIES.length; i++) {
+      const pUrl = PROXIES[i](directUrl);
+      try {
+        const res = await fetchT(pUrl, 15000, { headers: { Accept: 'application/json' }});
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.data?.children) {
+            const children: { data: RedditPost }[] = json.data.children;
+            const listings = children
+              .map((c) => { try { return mapPost(c.data); } catch { return null; } })
+              .filter((p): p is Listing => p !== null && typeof p.title === 'string' && p.title.length > 2);
+            
+            saveToCache(subId, query, listings);
+            return listings;
+          }
+        }
+      } catch (e) {}
+    }
+    
+    // If all fetch methods fail (403/429), return cache if available
+    if (cached && cached.length > 0) {
+      console.warn(`Fetch failed for r/${subId}. Loaded from cache.`);
+      return cached;
+    }
+
+    return [];
+  } finally {
+    release();
+  }
+}
+
 export function useListings() {
   const { query, selectedSubs } = useFiltersStore();
   const activeSubs = SUBS.filter((s) => selectedSubs.has(s.id));
@@ -122,6 +171,7 @@ export function useListings() {
       queryKey: ['listings', s.id, query],
       queryFn: () => fetchSubreddit(s.id, query),
       staleTime: 5 * 60 * 1000,
+      initialData: () => getFromCache(s.id, query) || undefined,
       retry: 1,
     })),
   });
