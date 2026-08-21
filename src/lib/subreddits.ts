@@ -1,0 +1,50 @@
+﻿import type { SubredditConfig } from '@/types';
+
+export const SUBS: SubredditConfig[] = [
+  { id: 'IndiaMarketplace', cat: 'nat', ic: '🇮🇳' },
+  { id: 'IndiaBuySell', cat: 'nat', ic: '🇮🇳' },
+  { id: 'IndiaItems', cat: 'nat', ic: '🇮🇳' },
+  { id: 'IndiaClassifieds', cat: 'nat', ic: '🇮🇳' },
+  { id: 'IndiaResell', cat: 'nat', ic: '🇮🇳' },
+  { id: 'delhi_marketplace', cat: 'del', ic: '🏛️' },
+  { id: 'DelhiClassifieds', cat: 'del', ic: '🏛️' },
+  { id: 'delhi', cat: 'del', ic: '🏛️' },
+  { id: 'BangaloreMarketplace', cat: 'blr', ic: '🌆' },
+  { id: 'Bengalurubuysell', cat: 'blr', ic: '🌆' },
+  { id: 'bangalore', cat: 'blr', ic: '🌆' },
+  { id: 'MumbaiBuySell', cat: 'mum', ic: '🌊' },
+  { id: 'mumbai', cat: 'mum', ic: '🌊' },
+  { id: 'pune', cat: 'city', ic: '🏙️' },
+  { id: 'Chennai', cat: 'city', ic: '🏙️' },
+  { id: 'hyderabad', cat: 'city', ic: '🏙️' },
+  { id: 'kolkata', cat: 'city', ic: '🏙️' },
+  { id: 'Indiangaming_Resale', cat: 'tec', ic: '🎮' },
+  { id: 'IndianGaming', cat: 'tec', ic: '🎮' },
+  { id: 'hardwareswap_india', cat: 'tec', ic: '💻' },
+  { id: 'IndiaPhones', cat: 'tec', ic: '📱' },
+  { id: 'Laptops_India', cat: 'tec', ic: '💻' },
+  { id: 'indiaphonemarket', cat: 'tec', ic: '📱' },
+  { id: 'CameraIndia', cat: 'tec', ic: '📷' },
+  { id: 'IndiaCarMarketplace', cat: 'veh', ic: '🚗' },
+  { id: 'IndiaBikes', cat: 'veh', ic: '🏍️' },
+  { id: 'CarTalkIndia', cat: 'veh', ic: '🚗' },
+  { id: 'RoyalEnfield', cat: 'veh', ic: '🏍️' },
+  { id: 'IndiaBookSell', cat: 'oth', ic: '📚' },
+  { id: 'IndiaFashionSell', cat: 'oth', ic: '👗' },
+  { id: 'IndiaWatches', cat: 'oth', ic: '⌚' },
+  { id: 'IndiaFurniture', cat: 'oth', ic: '🛋️' },
+  { id: 'IndiaFitness', cat: 'oth', ic: '🏋️' },
+];
+
+export const ALL_SUB_IDS = new Set(SUBS.map((s) => s.id));
+
+export const CAT_COLORS: Record<string, string> = {
+  nat: 'text-orange-400 bg-orange-400/10 border-orange-400/25',
+  del: 'text-blue-400 bg-blue-400/10 border-blue-400/25',
+  blr: 'text-purple-400 bg-purple-400/10 border-purple-400/25',
+  mum: 'text-teal-400 bg-teal-400/10 border-teal-400/25',
+  city: 'text-sky-400 bg-sky-400/10 border-sky-400/25',
+  tec: 'text-cyan-400 bg-cyan-400/10 border-cyan-400/25',
+  veh: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/25',
+  oth: 'text-pink-400 bg-pink-400/10 border-pink-400/25',
+};
